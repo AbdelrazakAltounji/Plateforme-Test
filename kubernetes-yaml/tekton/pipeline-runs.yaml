@@ -1,0 +1,18 @@
+#apiVersion: tekton.dev/v1beta1
+#kind: PipelineRun
+#metadata:
+#  name: pipeline-run-exec
+#  namespace: tekton-pipelines
+#spec:
+#  serviceAccountName: pipeline-runner-test-executor
+#  pipelineRef:
+#    name: pipeline-exec-tests-and-deploy-result
+#  resources:
+#    - name: git-source
+#      resourceRef:
+#        name: github-javascript-tests
+#  params:
+#    - name: BROWSER
+#      value: chrome
+#    - name: TESTS_SUITE
+#      value: tests/google

@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: selenium-node-chrome
+  namespace: selenium
+  labels:
+    name: selenium-node-chrome
+spec:
+  selector:
+    app: selenium-node-chrome
+    browser: chrome
+  ports:
+    - name: port
+      protocol: TCP
+      port: 5555
+      targetPort: 5555
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selenium-node-chrome
+  namespace: selenium
+  labels:
+    app: selenium-node-chrome
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selenium-node-chrome
+  template:
+    metadata:
+      labels:
+        app: selenium-node-chrome
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: selenium-node-chrome
+          image: selenium/node-chrome:4.0.0-rc-1-prerelease-20210618
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - bash
+                  - -c
+                  - export NODE_ID=$(curl -s localhost:5555/status | jq '.value.node.nodeId' -rj) && curl --request POST http://$SE_EVENT_BUS_HOST:4444/se/grid/distributor/node/$NODE_ID/drain --header 'X-REGISTRATION-SECRET;'
+            #          livenessProbe:
+            #            exec:
+            #              command:
+            #                - bash
+            #                - -c
+            #                - exit $([[ $(curl -s http://$SE_EVENT_BUS_HOST:4444/status | jq '.value.ready') == "false" ]] && echo 1 || echo 0)
+            #failureThreshold: 1
+            #initialDelaySeconds: 360
+            #periodSeconds: 60
+          env:
+            - name: SE_EVENT_BUS_HOST
+              value: "selenium-hub"
+            - name: SE_EVENT_BUS_PUBLISH_PORT
+              value: "4442"
+            - name: SE_EVENT_BUS_SUBSCRIBE_PORT
+              value: "4443"
+          ports:
+            - containerPort: 5555
+              protocol: TCP
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+          resources:
+            requests:
+              memory: "500Mi"
+              cpu: ".25"
+            limits:
+              memory: "500Mi"
+              cpu: ".25"
+      volumes:
+        - name: dshm
+          emptyDir: { "medium": "Memory" }
+#---
+#apiVersion: autoscaling/v1
+#kind: HorizontalPodAutoscaler
+#metadata:
+#  name: selenium-node-chrome
+#  namespace: selenium
+#spec:
+#  maxReplicas: 3
+#  minReplicas: 1
+#  scaleTargetRef:
+#    apiVersion: apps/v1
+#    kind: Deployment
+#    name: selenium-node-chrome
+#  targetCPUUtilizationPercentage: 80

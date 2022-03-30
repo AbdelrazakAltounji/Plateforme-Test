@@ -1,0 +1,32 @@
+aggregator:
+    configMap: elasticsearch-output
+    extraEnv:
+        - name: ELASTICSEARCH_HOST
+          value: 'elasticsearch.kube-logging.svc.cluster.local'
+        - name: ELASTICSEARCH_PORT
+          value: '9200'
+    extraVolumeMounts:
+        - name: pods
+          mountPath: /var/log/pods
+          readOnly: true
+    extraVolumes:
+        - name: pods
+          hostPath:
+              path: /var/log/pods
+              type: Directory
+forwarder:
+    configMap: elasticsearch-output
+    extraEnv:
+        - name: ELASTICSEARCH_HOST
+          value: 'elasticsearch.kube-logging.svc.cluster.local'
+        - name: ELASTICSEARCH_PORT
+          value: '9200'
+    extraVolumeMounts:
+        - name: pods
+          mountPath: /var/log/pods
+          readOnly: true
+    extraVolumes:
+        - name: pods
+          hostPath:
+              path: /var/log/pods
+              type: Directory

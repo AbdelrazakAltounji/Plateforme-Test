@@ -1,0 +1,19 @@
+# default values at https://github.com/grafana/helm-charts/blob/main/charts/loki-stack/values.yaml
+loki:
+  enabled: true
+promtail:
+  enabled: false
+fluent-bit:
+  enabled: true
+grafana:
+  enabled: true
+  image:
+    tag: 7.5.2
+prometheus:
+  enabled: true
+  alertmanager:
+    persistentVolume:
+      enabled: false
+  server:
+    persistentVolume:
+      enabled: false

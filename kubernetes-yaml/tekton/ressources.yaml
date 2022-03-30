@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: github-javascript-tests
+  namespace: tekton-pipelines
+spec:
+  type: git
+  params:
+    - name: url
+      value: https://eu-de.git.cloud.ibm.com/poc-k8s-selenium/tests-javascript.git
+    - name: provider
+      value: gitlab
+    - name: revision
+      value: master
+---
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: github-python-tests
+  namespace: tekton-pipelines
+spec:
+  type: git
+  params:
+    - name: url
+      value: https://eu-de.git.cloud.ibm.com/poc-k8s-selenium/tests-python.git
+    - name: provider
+      value: gitlab
+    - name: revision
+      value: master

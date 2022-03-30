@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: selenium-hub
+  namespace: selenium
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - selenium.cluster-test-platform-6474a10db2e260c615f9d4313ecdc8bc-0000.eu-de.containers.appdomain.cloud
+      secretName: cluster-test-platform-6474a10db2e260c615f9d4313ecdc8bc-0000
+  rules:
+    - host: selenium.cluster-test-platform-6474a10db2e260c615f9d4313ecdc8bc-0000.eu-de.containers.appdomain.cloud
+      http:
+        paths:
+          - backend:
+              serviceName: selenium-hub
+              servicePort: 4444

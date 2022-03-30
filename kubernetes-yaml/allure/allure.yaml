@@ -1,0 +1,91 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-allure
+  namespace: tekton-pipelines
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: allure-nginx-conf
+  namespace: tekton-pipelines
+data:
+  default.conf: |
+    server {
+      listen 80;
+
+      location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: allure-report
+  namespace: tekton-pipelines
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: allure-report
+  template:
+    metadata:
+      labels:
+        run: allure-report
+    spec:
+      containers:
+        - image: nginx:alpine
+          name: nginx
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: volume-nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: volume-allure
+              mountPath: /usr/share/nginx/html
+              #mountPath: /var/www/html
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: ".125"
+            limits:
+              memory: "128Mi"
+              cpu: ".25"
+      volumes:
+        - name: volume-allure
+          persistentVolumeClaim:
+            claimName: pvc-allure
+        - name: volume-nginx-conf
+          configMap:
+            name: allure-nginx-conf
+            items:
+              - key: default.conf
+                path: default.conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: allure-report
+  namespace: tekton-pipelines
+spec:
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    run: allure-report
+status:
+  loadBalancer: {}

@@ -1,0 +1,97 @@
+#apiVersion: networking.k8s.io/v1beta1
+#kind: Ingress
+#metadata:
+#  name: selenium
+#  namespace: selenium
+#  annotations:
+#    nginx.ingress.kubernetes.io/auth-type: basic
+#    nginx.ingress.kubernetes.io/auth-secret: basic-auth
+#    nginx.ingress.kubernetes.io/auth-realm: "Authentification Requise"
+#    kubernetes.io/ingress.class: nginx
+#    cert-manager.io/cluster-issuer: letsencrypt
+#spec:
+#  tls:
+#    - hosts:
+#        - selenium.rexel.moin.plus
+#      secretName: tls-secret-selenium
+#  rules:
+#    - host: selenium.rexel.moin.plus
+#      http:
+#        paths:
+#          - backend:
+#              serviceName: selenium-hub
+#              servicePort: 4444
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selenium-hub
+  namespace: selenium
+  labels:
+    name: selenium-hub
+spec:
+  selector:
+    app: selenium-hub
+  ports:
+    - name: bus-host
+      port: 4444
+      targetPort: 4444
+      protocol: TCP
+    - name: subscribe-port
+      port: 4443
+      targetPort: 4443
+      protocol: TCP
+    - name: publish-port
+      port: 4442
+      targetPort: 4442
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selenium-hub
+  namespace: selenium
+  labels:
+    app: selenium-hub
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selenium-hub
+  template:
+    metadata:
+      labels:
+        app: selenium-hub
+    spec:
+      containers:
+        - name: selenium-hub
+          image: selenium/hub:4.0.0-rc-1-prerelease-20210618
+          ports:
+            - name: bus-host
+              containerPort: 4444
+              protocol: TCP
+            - name: subscribe-port
+              containerPort: 4443
+              protocol: TCP
+            - name: publish-port
+              containerPort: 4442
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /wd/hub/status
+              port: 4444
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /grid/console
+              port: 4444
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          resources:
+            limits:
+              memory: "500Mi"
+              cpu: ".25"
+            requests:
+              memory: "500Mi"
+              cpu: ".25"

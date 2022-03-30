@@ -1,0 +1,23 @@
+#apiVersion: networking.k8s.io/v1beta1
+#kind: Ingress
+#metadata:
+#  name: selenium
+#  namespace: selenium
+#  annotations:
+#    nginx.ingress.kubernetes.io/auth-type: basic
+#    nginx.ingress.kubernetes.io/auth-secret: basic-auth
+#    nginx.ingress.kubernetes.io/auth-realm: "Authentification Requise"
+#    kubernetes.io/ingress.class: nginx
+#    cert-manager.io/cluster-issuer: letsencrypt
+#spec:
+#  tls:
+#    - hosts:
+#        - selenium.rexel.moin.plus
+#      secretName: tls-secret-selenium
+#  rules:
+#    - host: selenium.rexel.moin.plus
+#      http:
+#        paths:
+#          - backend:
+#              serviceName: selenium-hub
+#              servicePort: 4444

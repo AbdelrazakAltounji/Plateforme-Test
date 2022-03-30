@@ -1,0 +1,94 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: task-exec-tests-javascript
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: BROWSER
+    - name: TESTS_SUITE
+  resources:
+    inputs:
+      - name: git-source
+        type: git
+  steps:
+    - name: exec-tests-javascript
+      image: node:lts-alpine
+      script: |
+        cd git-source
+        npm install
+        BROWSER=$(params.BROWSER) SELENIUM_HUB=http://selenium-hub.selenium.svc.cluster.local:4444/wd/hub npm run test $(params.TESTS_SUITE)
+        cp -R ./allure-results /allure
+      envFrom:
+        - secretRef:
+            name: secret-pg-credentials
+      volumeMounts:
+        - name: volume-allure
+          mountPath: /allure
+      securityContext:
+        runAsUser: 0
+  volumes:
+    - name: volume-allure
+      persistentVolumeClaim:
+        claimName: pvc-allure
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: task-exec-tests-python
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: BROWSER
+  resources:
+    inputs:
+      - name: git-source
+        type: git
+  steps:
+    - name: exec-tests-python
+      image: python:alpine
+      script: |
+        cd git-source
+        pip install selenium
+        pip install pytest
+        pip install allure-pytest
+        BROWSER=$(params.BROWSER) SELENIUM_HUB=http://selenium-hub.selenium.svc.cluster.local:4444/wd/hub pytest --alluredir=./allure-results
+        cp -R ./allure-results /allure
+      envFrom:
+        - secretRef:
+            name: secret-pg-credentials
+      volumeMounts:
+        - name: volume-allure
+          mountPath: /allure
+      securityContext:
+        runAsUser: 0
+  volumes:
+    - name: volume-allure
+      persistentVolumeClaim:
+        claimName: pvc-allure
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: task-generate-report
+  namespace: tekton-pipelines
+spec:
+  steps:
+    - name: generate-report
+      image: docker.io/vctrmn/node-java-allure-generator
+      script: |
+        [ -d "/allure/allure-report/history" ] &&  echo "Directory history found." || echo "Directory history not found."
+        cp -R /allure/allure-report/history /allure/allure-results
+        ../app/node_modules/.bin/allure generate /allure/allure-results -o /allure/allure-report --clean
+        sed -i 's/Allure/Rexel/g' /allure/allure-report/index.html
+        sed -i 's/>Allure<\/span>/><\/span>/g' /allure/allure-report/app.js
+        echo ".side-nav__brand { background: url(data:image/svg+xml;base64,PHN2ZyB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOmNjPSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9ucyMiIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyIgeG1sbnM6c3ZnPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczpzb2RpcG9kaT0iaHR0cDovL3NvZGlwb2RpLnNvdXJjZWZvcmdlLm5ldC9EVEQvc29kaXBvZGktMC5kdGQiIHhtbG5zOmlua3NjYXBlPSJodHRwOi8vd3d3Lmlua3NjYXBlLm9yZy9uYW1lc3BhY2VzL2lua3NjYXBlIiB3aWR0aD0iMTA1LjE5NDkzIiBoZWlnaHQ9IjM5LjMzODc5OSIgdmlld0JveD0iMCAwIDI3LjgzMjgyNiAxMC40MDgzOSIgdmVyc2lvbj0iMS4xIiBpZD0ic3ZnMTI3NiIgaW5rc2NhcGU6dmVyc2lvbj0iMC45Mi4wIHIxNTI5OSIgc29kaXBvZGk6ZG9jbmFtZT0icmV4ZWwuc3ZnIj4KICA8ZGVmcyBpZD0iZGVmczEyNzAiPgogICAgPGNsaXBQYXRoIGlkPSJjbGlwUGF0aDk3OSIgY2xpcFBhdGhVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8cGF0aCBpbmtzY2FwZTpjb25uZWN0b3ItY3VydmF0dXJlPSIwIiBpZD0icGF0aDk3NyIgZD0iTSAwLDAgSCA0MTkuNTI4IFYgNTk1LjI3NSBIIDAgWiIvPgogICAgPC9jbGlwUGF0aD4KICAgIDxjbGlwUGF0aCBpZD0iY2xpcFBhdGg5NjEiIGNsaXBQYXRoVW5pdHM9InVzZXJTcGFjZU9uVXNlIj4KICAgICAgPHBhdGggaW5rc2NhcGU6Y29ubmVjdG9yLWN1cnZhdHVyZT0iMCIgaWQ9InBhdGg5NTkiIGQ9Ik0gMCwwIEggNDE5LjUyOCBWIDU5NS4yNzUgSCAwIFoiLz4KICAgIDwvY2xpcFBhdGg+CiAgICA8Y2xpcFBhdGggaWQ9ImNsaXBQYXRoOTI1IiBjbGlwUGF0aFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CiAgICAgIDxwYXRoIGlua3NjYXBlOmNvbm5lY3Rvci1jdXJ2YXR1cmU9IjAiIGlkPSJwYXRoOTIzIiBkPSJNIDAsMCBIIDQxOS41MjggViA1OTUuMjc1IEggMCBaIi8+CiAgICA8L2NsaXBQYXRoPgogICAgPGNsaXBQYXRoIGlkPSJjbGlwUGF0aDkwMyIgY2xpcFBhdGhVbml0cz0idXNlclNwYWNlT25Vc2UiPgogICAgICA8cGF0aCBpbmtzY2FwZTpjb25uZWN0b3ItY3VydmF0dXJlPSIwIiBpZD0icGF0aDkwMSIgZD0iTSAwLDAgSCA0MTkuNTI4IFYgNTk1LjI3NSBIIDAgWiIvPgogICAgPC9jbGlwUGF0aD4KICA8L2RlZnM+CiAgPHNvZGlwb2RpOm5hbWVkdmlldyBpZD0iYmFzZSIgcGFnZWNvbG9yPSIjZmZmZmZmIiBib3JkZXJjb2xvcj0iIzY2NjY2NiIgYm9yZGVyb3BhY2l0eT0iMS4wIiBpbmtzY2FwZTpwYWdlb3BhY2l0eT0iMC4wIiBpbmtzY2FwZTpwYWdlc2hhZG93PSIyIiBpbmtzY2FwZTp6b29tPSI3LjY5NzExMTYiIGlua3NjYXBlOmN4PSI1Mi4wOTc0NjQiIGlua3NjYXBlOmN5PSIxOS4xNjkzOTgiIGlua3NjYXBlOmRvY3VtZW50LXVuaXRzPSJtbSIgaW5rc2NhcGU6Y3VycmVudC1sYXllcj0ibGF5ZXIxIiBzaG93Z3JpZD0iZmFsc2UiIGZpdC1tYXJnaW4tdG9wPSIwIiBmaXQtbWFyZ2luLWxlZnQ9IjAiIGZpdC1tYXJnaW4tcmlnaHQ9IjAiIGZpdC1tYXJnaW4tYm90dG9tPSIwIiB1bml0cz0icHgiIGlua3NjYXBlOndpbmRvdy13aWR0aD0iMTI4MCIgaW5rc2NhcGU6d2luZG93LWhlaWdodD0iNzQ0IiBpbmtzY2FwZTp3aW5kb3cteD0iLTQiIGlua3NjYXBlOndpbmRvdy15PSItNCIgaW5rc2NhcGU6d2luZG93LW1heGltaXplZD0iMSIvPgogIDxtZXRhZGF0YSBpZD0ibWV0YWRhdGExMjczIj4KICAgIDxyZGY6UkRGPgogICAgICA8Y2M6V29yayByZGY6YWJvdXQ9IiI+CiAgICAgICAgPGRjOmZvcm1hdD5pbWFnZS9zdmcreG1sPC9kYzpmb3JtYXQ+CiAgICAgICAgPGRjOnR5cGUgcmRmOnJlc291cmNlPSJodHRwOi8vcHVybC5vcmcvZGMvZGNtaXR5cGUvU3RpbGxJbWFnZSIvPgogICAgICAgIDxkYzp0aXRsZS8+CiAgICAgIDwvY2M6V29yaz4KICAgIDwvcmRmOlJERj4KICA8L21ldGFkYXRhPgogIDxnIGlua3NjYXBlOmxhYmVsPSJMYXllciAxIiBpbmtzY2FwZTpncm91cG1vZGU9ImxheWVyIiBpZD0ibGF5ZXIxIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNjkuOTU4MjYsMzUuNzg3ODU4KSI+CiAgICA8ZyBpZD0iZzE1MDIiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAuMTMyMjkxOTQsLTAuMTMyMjkzOTUpIj4KICAgICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMC4zNTI3Nzc3NywwLDAsLTAuMzUyNzc3NzcsLTE0Mi4zOTAwMiwtMjguMTQzNTE0KSIgaWQ9Imc5MDUiPgogICAgICAgIDxwYXRoIGlua3NjYXBlOmNvbm5lY3Rvci1jdXJ2YXR1cmU9IjAiIGlkPSJwYXRoOTA3IiBzdHlsZT0iZmlsbDojMDA0NjhjO2ZpbGwtb3BhY2l0eToxO2ZpbGwtcnVsZTpub256ZXJvO3N0cm9rZTpub25lIiBkPSJtIDAsMCB2IDE2LjY5IGMgMCwyLjUzIC0yLjEwNSw0LjIyOSAtNC4xODEsNC4yMjkgSCAtNzguMTQ2IFYgMCBaIi8+CiAgICAgIDwvZz4KICAgICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMC4zNTI3Nzc3NywwLDAsLTAuMzUyNzc3NzcsLTE2OS45NTgxOSwtMjYuODcyNDIxKSIgaWQ9Imc5MDkiPgogICAgICAgIDxwYXRoIGlua3NjYXBlOmNvbm5lY3Rvci1jdXJ2YXR1cmU9IjAiIGlkPSJwYXRoOTExIiBzdHlsZT0iZmlsbDojMmI5NmNmO2ZpbGwtb3BhY2l0eToxO2ZpbGwtcnVsZTpub256ZXJvO3N0cm9rZTpub25lIiBkPSJNIDAsMCBDIDAsLTIuODIgMi4zNTIsLTQuMjMyIDQuMTkzLC00LjIzMiBIIDc4LjE0NiBWIDIuNzQxIEggMCBaIi8+CiAgICAgIDwvZz4KICAgICAgPHBhdGggaW5rc2NhcGU6Y29ubmVjdG9yLWN1cnZhdHVyZT0iMCIgaWQ9InBhdGg5MTciIHN0eWxlPSJmaWxsOiNmZmZmZmY7ZmlsbC1vcGFjaXR5OjE7ZmlsbC1ydWxlOm5vbnplcm87c3Ryb2tlOm5vbmU7c3Ryb2tlLXdpZHRoOjAuMzUyNzc3NzgiIGQ9Im0gLTE2OS45NTgyNiwtMjcuODM4NzQ3IGggMjcuNTY4MTcgdiAtMC4zMDQ4IGggLTI3LjU2ODE3IHoiLz4KICAgICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMC4zNTI3Nzc3NywwLDAsLTAuMzUyNzc3NzcsLTE0OS44MjQ2NywtMzEuMTQwODU1KSIgaWQ9Imc5MjciPgogICAgICAgIDxwYXRoIGlua3NjYXBlOmNvbm5lY3Rvci1jdXJ2YXR1cmU9IjAiIGlkPSJwYXRoOTI5IiBzdHlsZT0iZmlsbDojZmZmZmZmO2ZpbGwtb3BhY2l0eToxO2ZpbGwtcnVsZTpub256ZXJvO3N0cm9rZTpub25lIiBkPSJNIDAsMCBDIDAsLTAuNDY1IDAuMjMyLC0wLjY2NCAwLjY3LC0wLjY2NCBIIDUuNDQyIFYgLTEuNTI1IEggMC4zNDYgYyAtMS44NDIsMCAtMi43MjYsMC42MjkgLTIuNzI2LDEuOTUxIFYgNS40NDUgSCAwIFoiLz4KICAgICAgPC9nPgogICAgICA8ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjM1Mjc3Nzc3LDAsMCwtMC4zNTI3Nzc3NywtMTU0Ljk3NzA2LC0zMy4xMjI1ODQpIiBpZD0iZzkzMSI+CiAgICAgICAgPHBhdGggaW5rc2NhcGU6Y29ubmVjdG9yLWN1cnZhdHVyZT0iMCIgaWQ9InBhdGg5MzMiIHN0eWxlPSJmaWxsOiNmZmZmZmY7ZmlsbC1vcGFjaXR5OjE7ZmlsbC1ydWxlOm5vbnplcm87c3Ryb2tlOm5vbmUiIGQ9Im0gMCwwIHYgMC4yOTUgYyAtMi40OTMsMCAtNC4yLC0xLjEzMSAtNS45NTMsLTIuNzc0IC0wLjc5NCwwLjY5IC0xLjQwMywxLjIyMiAtMS41NjYsMS4zNjMgLTAuODIzLDAuNzE4IC0wLjkxLDAuOTQ0IC0yLjA4NiwwLjk0NCBoIC0xLjk4NSBjIDEuOTkzLC0xLjc0MyAzLjMzMSwtMi45MTggNC4yNjIsLTMuNzMyIC0xLjcwMywtMS43MDMgLTMuOTY5LC00LjMyMSAtNi4yOTQsLTQuMTk4IHYgLTAuMjQ3IGMgMi4wODIsLTAuMTk1IDQuMzc1LDAuNjk0IDcuMjM2LDMuNjE5IDEuMDY4LC0wLjkzNyAxLjI1MywtMS4wODkgMS42NjEsLTEuNDIyIDEuMTMxLC0wLjkyIDAuOTU3LC0wLjk5MSAyLjIzMywtMC45OTEgaCAxLjkwNiBjIDAsMCAtMi40ODUsMi4xNTggLTQuNDg1LDMuODk2IEMgLTMuNzIxLC0xLjczIC0xLjk0OCwwIDAsMCIvPgogICAgICA8L2c+CiAgICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDAuMzUyNzc3NzcsMCwwLC0wLjM1Mjc3Nzc3LC0xNjIuMjg0NTcsLTMyLjAzNjk0NikiIGlkPSJnOTM1Ij4KICAgICAgICA8cGF0aCBpbmtzY2FwZTpjb25uZWN0b3ItY3VydmF0dXJlPSIwIiBpZD0icGF0aDkzNyIgc3R5bGU9ImZpbGw6I2ZmZmZmZjtmaWxsLW9wYWNpdHk6MTtmaWxsLXJ1bGU6bm9uemVybztzdHJva2U6bm9uZSIgZD0iTSAwLDAgQyAwLjA1MiwxLjg5MiAwLjU2LDIuMjQ2IDEuNzIxLDIuMjQ2IEggMy4xNzcgQyA0LjMzOSwyLjI0NiA0Ljg0OCwxLjg5MiA0Ljg5OCwwIFogbSA3LjM3NiwtMC43OTQgYyAwLDAuMSAwLjAwNSwwLjIwNyAwLjAwNSwwLjMxNyAwLDIuOTcgLTIuMTI2LDMuNTUgLTQuODUzLDMuNTUgSCAyLjMwOSBjIC0yLjE2OCwwIC00Ljc5MiwtMC41OCAtNC43OTIsLTMuNTUgMCwtMy4wMjMgMi4xNzUsLTMuNTg3IDMuNTc5LC0zLjU4NyBoIDUuNjY2IHYgMC44NTIgSCAxLjcyMSBjIC0xLjUzMiwwIC0xLjcwMSwwLjU5IC0xLjcyMSwyLjQxOCB6Ii8+CiAgICAgIDwvZz4KICAgICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMC4zNTI3Nzc3NywwLDAsLTAuMzUyNzc3NzcsLTE1My45MzM3OSwtMzIuMDM2OTQ2KSIgaWQ9Imc5MzkiPgogICAgICAgIDxwYXRoIGlua3NjYXBlOmNvbm5lY3Rvci1jdXJ2YXR1cmU9IjAiIGlkPSJwYXRoOTQxIiBzdHlsZT0iZmlsbDojZmZmZmZmO2ZpbGwtb3BhY2l0eToxO2ZpbGwtcnVsZTpub256ZXJvO3N0cm9rZTpub25lIiBkPSJNIDAsMCBDIDAuMDQ4LDEuODkyIDAuNTYsMi4yNDYgMS43MTksMi4yNDYgSCAzLjE3NSBDIDQuMzM2LDIuMjQ2IDQuODQzLDEuODkyIDQuODk1LDAgWiBtIDcuMzcxLC0wLjc5NCBjIDAuMDA4LDAuMSAwLjAwOSwwLjIwNyAwLjAwOSwwLjMxNyAwLDIuOTcgLTIuMTMsMy41NSAtNC44NTQsMy41NSBIIDIuMzA4IGMgLTIuMTc0LDAgLTQuNzk1LC0wLjU4IC00Ljc5NSwtMy41NSAwLC0zLjAyMyAyLjE3NSwtMy41ODcgMy41NzcsLTMuNTg3IGggNS42NzIgdiAwLjg1MiBIIDEuNzE5IGMgLTEuNTMzLDAgLTEuNzAzLDAuNTkgLTEuNzE5LDIuNDE4IHoiLz4KICAgICAgPC9nPgogICAgICA8ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjM1Mjc3Nzc3LDAsMCwtMC4zNTI3Nzc3NywtMTY0LjQ1MzA5LC0zMS42NDMxNzUpIiBpZD0iZzk0MyI+CiAgICAgICAgPHBhdGggaW5rc2NhcGU6Y29ubmVjdG9yLWN1cnZhdHVyZT0iMCIgaWQ9InBhdGg5NDUiIHN0eWxlPSJmaWxsOiNmZmZmZmY7ZmlsbC1vcGFjaXR5OjE7ZmlsbC1ydWxlOm5vbnplcm87c3Ryb2tlOm5vbmUiIGQ9Im0gMCwwIGMgMC45OTQsMC4zIDEuNTY3LDAuOTcgMS41NjcsMi4wNjIgMCwxLjU5IC0xLjM0MywxLjk1OSAtMi43OTQsMS45NTkgaCAtNi41NjQgdiAtNi45NjggaCAyLjQwNCB2IDIuNjU5IGggMi45NjQgYyAxLjAzLDAgMS42ODEsLTAuMDgxIDEuNjgxLC0yLjY1OSBMIDEuNjc1LC0yLjk1IEMgMS42NzUsLTEuMzI4IDAuOTk0LC0wLjQ2IDAsMCBtIC01LjM4NywzLjI2IGggMy42MTggYyAxLjI1NSwwIDEuMTIxLC0yLjczOSAtMC4xODcsLTIuNzM5IGggLTMuNDMxIHoiLz4KICAgICAgPC9nPgogICAgPC9nPgogIDwvZz4KPC9zdmc+) no-repeat left center !important; margin-left: 10px; }" >> /allure/allure-report/styles.css
+      volumeMounts:
+        - name: volume-allure
+          mountPath: /allure
+      securityContext:
+        runAsUser: 0
+  volumes:
+    - name: volume-allure
+      persistentVolumeClaim:
+        claimName: pvc-allure

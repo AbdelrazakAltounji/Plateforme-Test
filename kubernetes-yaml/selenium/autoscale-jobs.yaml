@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: autoscale-selenium-node
+  namespace: selenium
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: autoscale-selenium-node
+rules:
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - deployments/rollback
+      - deployments/scale
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: autoscale-selenium-node
+subjects:
+  - kind: ServiceAccount
+    name: autoscale-selenium-node
+    namespace: selenium
+roleRef:
+  kind: ClusterRole
+  name: autoscale-selenium-node
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: scale-up-selenium-node
+  namespace: selenium
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: autoscale-selenium-node
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+              args:
+                - -c
+                - test $(curl -s http://selenium-hub:4444/se/grid/newsessionqueuer/queue | jq '.value' | jq length) -ne 0 && export BROWSER=$(curl -s http://selenium-hub:4444/se/grid/newsessionqueuer/queue | jq '.value[0].browserName' -rj) && export CURRENT_REPLICA=$(kubectl get deploy selenium-node-$BROWSER -n selenium -o json | jq '.spec.replicas') && kubectl scale deployment/selenium-node-$BROWSER --replicas=`expr "$CURRENT_REPLICA" + 1` -n selenium || echo 'No session'
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: keep-alive-selenium-node
+  namespace: selenium
+spec:
+  schedule: "*/2 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: autoscale-selenium-node
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+              args:
+                - -c
+                - test $(curl -s http://selenium-hub:4444/status | jq '.value.nodes' | jq length) -eq 0 && test $(curl -s http://selenium-hub:4444/se/grid/newsessionqueuer/queue | jq '.value' | jq length) -eq 0 && kubectl scale deployment/selenium-node-chrome --replicas=1 -n selenium && kubectl rollout restart deployment/selenium-node-chrome -n selenium && kubectl scale deployment/selenium-node-firefox --replicas=1 -n selenium && kubectl rollout restart deployment/selenium-node-firefox -n selenium || echo 'Minimum nodes are alive'
+          restartPolicy: OnFailure
